@@ -66,27 +66,35 @@ async def check_and_notify():
     queries = get_search_queries()
     logger.info(f"Searching {len(queries)} categories")
     
-    # Search for tweets
-    tweets = twitter_client.search_multiple_queries(
+    # Track all tweets and categories
+    all_tweets = []
+    category_counter = Counter()
+    
+    # Callback to send tweets immediately when found
+    async def send_category_tweets(tweets, category):
+        """Send tweets from a category immediately."""
+        logger.info(f"Sending {len(tweets)} tweets from {category} category")
+        sent = await telegram_client.send_tweets_batch(tweets)
+        logger.info(f"Sent {sent}/{len(tweets)} tweets from {category}")
+    
+    # Search for tweets with incremental sending
+    tweets = await twitter_client.search_multiple_queries_async(
         queries=queries,
         max_results_per_query=20,
-        since_id=last_tweet_id
+        since_id=last_tweet_id,
+        callback=send_category_tweets
     )
     
     if not tweets:
         logger.info("No new tweets found")
         return
     
-    logger.info(f"Found {len(tweets)} new tweets")
+    logger.info(f"Found {len(tweets)} total unique tweets")
     
-    # Count categories
-    category_counter = Counter()
+    # Count categories for summary
     for tweet in tweets:
         for category in tweet.get('categories', []):
             category_counter[category] += 1
-    
-    # Send tweets to Telegram
-    sent_count = await telegram_client.send_tweets_batch(tweets)
     
     # Send summary
     await telegram_client.send_summary(len(tweets), dict(category_counter))
@@ -96,7 +104,7 @@ async def check_and_notify():
         newest_tweet_id = max(tweet['id'] for tweet in tweets)
         save_last_tweet_id(newest_tweet_id)
     
-    logger.info(f"Check complete. Sent {sent_count}/{len(tweets)} tweets")
+    logger.info(f"Check complete. Processed {len(tweets)} tweets")
 
 
 async def run_continuous():

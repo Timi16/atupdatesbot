@@ -80,6 +80,49 @@ class TwitterClient:
             logger.error(f"Error searching tweets: {e}")
             return []
     
+    async def search_multiple_queries_async(self, queries, max_results_per_query=20, since_id=None, callback=None):
+        """
+        Search multiple queries and combine results (async version with callback support).
+        
+        Args:
+            queries: List of query dictionaries with 'category' and 'query' keys
+            max_results_per_query: Max results per individual query
+            since_id: Returns results with Tweet ID greater than this
+            callback: Optional async callback function to call with tweets after each query
+            
+        Returns:
+            List of tweets from all queries (deduplicated)
+        """
+        all_tweets = {}  # Use dict to deduplicate by tweet ID
+        
+        for query_info in queries:
+            category = query_info['category']
+            query = query_info['query']
+            
+            logger.info(f"Searching {category}: {query}")
+            tweets = self.search_tweets(query, max_results_per_query, since_id)
+            
+            # Collect new tweets
+            new_tweets = []
+            for tweet in tweets:
+                if tweet['id'] not in all_tweets:
+                    all_tweets[tweet['id']] = tweet
+                    new_tweets.append(tweet)
+            
+            # Call callback with new tweets from this category if provided
+            if callback and new_tweets:
+                await callback(new_tweets, category)
+        
+        # Sort by creation time (newest first)
+        sorted_tweets = sorted(
+            all_tweets.values(),
+            key=lambda x: x['created_at'],
+            reverse=True
+        )
+        
+        logger.info(f"Total unique tweets found: {len(sorted_tweets)}")
+        return sorted_tweets
+    
     def search_multiple_queries(self, queries, max_results_per_query=20, since_id=None):
         """
         Search multiple queries and combine results.
